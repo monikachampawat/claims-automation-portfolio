@@ -1,4 +1,8 @@
 
+## 🚀 Live Demo (Recommended)
+👉 Open the interactive Streamlit app:  
+https://claims-automation-portfolio-jaf3civukajdduhursetts.streamlit.app/
+
 # Claims Automation & Insights System
 
 An end-to-end **hybrid** project that demonstrates Business Analysis + .NET context + **SQL/Data modeling** + **Power BI analytics** + **Python automation**. Use this repo as a live portfolio when reaching out to hiring managers and senior leaders.
