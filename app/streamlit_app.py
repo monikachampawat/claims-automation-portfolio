@@ -23,9 +23,9 @@ def build_kpi_summary_csv(df: pd.DataFrame) -> bytes:
     tmp["DurationHours"] = ((tmp["ClosedAt"].fillna(now) - tmp["CreatedAt"])
                             .dt.total_seconds() / 3600).round(2)
 
-    avg_proc = tmp.loc[tmp["Resolved"], "DurationHours"].mean()
-    sla_pct  = 100 * ((tmp.loc[tmp["Resolved"], "DurationHours"]
-                       <= tmp.loc[tmp["Resolved"], "SLA_Hours"]).mean())
+    sla_mask = tmp["Resolved"]
+    avg_proc = tmp.loc[sla_mask, "DurationHours"].mean()
+    sla_pct  = 100 * (tmp.loc[sla_mask, "DurationHours"] <= tmp.loc[sla_mask, "SLA_Hours"]).mean()
     open_cnt = int((~tmp["Resolved"]).sum())
 
     summary = pd.DataFrame([{
@@ -38,7 +38,9 @@ def build_kpi_summary_csv(df: pd.DataFrame) -> bytes:
     summary.to_csv(buf, index=False)
     return buf.getvalue().encode("utf-8")
 
+
 def build_filtered_csv(df: pd.DataFrame) -> bytes:
+    """Export the currently filtered dataframe as CSV."""
     buf = io.StringIO()
     df.to_csv(buf, index=False)
     return buf.getvalue().encode("utf-8")
@@ -105,7 +107,7 @@ def build_aging_trends(df: pd.DataFrame) -> pd.DataFrame:
         open_claims["AgeHours"] = ((cutoff - open_claims["CreatedAt"]).dt.total_seconds() / 3600.0)
         open_claims["Bucket"] = pd.cut(
             open_claims["AgeHours"],
-            bins=[0, 24, 48, np.inf],  # or float('inf') if you prefer to avoid numpy
+            bins=[0, 24, 48, np.inf],  # or float('inf') if you prefer
             labels=["0-24h", "24-48h", ">48h"],
             include_lowest=True,
             right=True
