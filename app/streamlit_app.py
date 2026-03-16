@@ -1,4 +1,9 @@
-
+#Fail-safe: if Altair isn't available, don't crash the app
+try:
+    import altair as alt  # noqa: F401
+except Exception:
+    import streamlit as st
+    st.warning("Altair is not installed; charts will use Streamlit's basic charting.")
 import streamlit as st
 import pandas as pd
 from pathlib import Path
