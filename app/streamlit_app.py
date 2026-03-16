@@ -9,6 +9,34 @@ import io
 import streamlit as st
 import pandas as pd
 from pathlib import Path
+import io
+import pandas as pd
+
+def build_aging_buckets_csv(df: pd.DataFrame) -> bytes:
+    """Return a CSV (bytes) with the Open‑Claims Aging Buckets distribution."""
+    now = pd.Timestamp.utcnow()
+    tmp = df.copy()
+    tmp["Resolved"] = tmp["ClosedAt"].notna()
+    tmp["DurationHours"] = ((tmp["ClosedAt"].fillna(now) - tmp["CreatedAt"])
+                            .dt.total_seconds() / 3600).round(2)
+
+    open_df = tmp[~tmp["Resolved"]].copy()
+    open_df["AgingBucket"] = pd.cut(
+        open_df["DurationHours"],
+        bins=[0, 24, 48, 1e9],
+        labels=["0-24h", "24-48h", ">48h"],
+        include_lowest=True
+    )
+
+    aging = (open_df["AgingBucket"]
+             .value_counts()
+             .sort_index()
+             .rename_axis("Bucket")
+             .reset_index(name="Count"))
+
+    buf = io.StringIO()
+    aging.to_csv(buf, index=False)
+    return buf.getvalue().encode("utf-8")
 
 # ---------- Page Setup ----------
 st.set_page_config(page_title='Claims Automation & Insights', layout='wide')
@@ -88,3 +116,23 @@ st.bar_chart(open_df['AgingBucket'].value_counts().sort_index())
 # ---------- Table ----------
 st.subheader('Raw Data Preview')
 st.dataframe(df.head(50))
+# --- After KPI metrics ---
+b1, b2 = st.columns(2)
+
+with b1:
+    st.download_button(
+        label="⬇️ Download KPIs (CSV)",
+        data=build_kpi_summary_csv(df),   # existing helper you already added
+        file_name="kpi_summary.csv",
+        mime="text/csv",
+        help="Exports AvgProcessingHours, SLACompliancePct, and OpenClaims."
+    )
+
+with b2:
+    st.download_button(
+        label="⬇️ Download Aging Buckets (CSV)",
+        data=build_aging_buckets_csv(df),  # <-- the new helper above
+        file_name="aging_buckets.csv",
+        mime="text/csv",
+        help="Exports the Open‑Claims distribution by 0‑24h, 24‑48h, and >48h."
+    )
