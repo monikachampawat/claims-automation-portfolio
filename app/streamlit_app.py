@@ -126,9 +126,35 @@ def build_aging_trends(df: pd.DataFrame) -> pd.DataFrame:
 st.set_page_config(page_title="Claims Automation & Insights", layout="wide")
 st.title("Claims Automation & Insights – Live Demo")
 
+#MAKE TABS BIGGER 
+st.markdown(
+    """
+    <style>
+    /* Make tab labels bigger */
+    .stTabs [data-baseweb="tab"] p {
+        font-size: 20px !important;
+        font-weight: 600 !important;
+        padding: 8px 20px !important;
+    }
+
+    /* Make active tab underline thicker and colored */
+    .stTabs [aria-selected="true"] {
+        border-bottom: 4px solid #ff4b4b !important;
+    }
+
+    /* Increase spacing between tabs */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 2rem !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+
+
 # =========================
 # Data Loading
-# =========================
 DATA_DEFAULT = Path(__file__).resolve().parents[1] / "data" / "claims_sample.csv"
 
 uploaded = st.file_uploader("Upload a claims CSV (or use the sample dataset):", type=["csv"])
@@ -144,7 +170,6 @@ for col in ["Priority", "Status"]:
 
 # =========================
 # Sidebar Filters (Date / Priority / Status)
-# =========================
 st.sidebar.header("Filters")
 
 min_dt = pd.to_datetime(df["CreatedAt"]).min().date() if not df.empty else date.today()
