@@ -9,11 +9,34 @@ import io
 import streamlit as st
 import pandas as pd
 from pathlib import Path
-import io
-import pandas as pd
+
+# ---------- Helpers (CSV builders) ----------
+def build_kpi_summary_csv(df: pd.DataFrame) -> bytes:
+    """Return a CSV (bytes) with the KPIs currently shown in the app."""
+    now = pd.Timestamp.utcnow()
+    tmp = df.copy()
+    tmp["Resolved"] = tmp["ClosedAt"].notna()
+    tmp["DurationHours"] = ((tmp["ClosedAt"].fillna(now) - tmp["CreatedAt"]).dt.total_seconds() / 3600).round(2)
+
+    avg_proc = tmp.loc[tmp["Resolved"], "DurationHours"].mean()
+    sla_pct = 100 * (
+        (tmp.loc[tmp["Resolved"], "DurationHours"] <= tmp.loc[tmp["Resolved"], "SLA_Hours"]).mean()
+    )
+    open_cnt = int((~tmp["Resolved"]).sum())
+
+    summary = pd.DataFrame([{
+        "AvgProcessingHours": round(float(avg_proc), 2) if pd.notna(avg_proc) else None,
+        "SLACompliancePct": round(float(sla_pct), 2) if pd.notna(sla_pct) else None,
+        "OpenClaims": open_cnt
+    }])
+
+    buf = io.StringIO()
+    summary.to_csv(buf, index=False)
+    return buf.getvalue().encode("utf-8")
+
 
 def build_aging_buckets_csv(df: pd.DataFrame) -> bytes:
-    """Return a CSV (bytes) with the Open‑Claims Aging Buckets distribution."""
+    """Return a CSV (bytes) with the Open-Claims Aging Buckets distribution."""
     now = pd.Timestamp.utcnow()
     tmp = df.copy()
     tmp["Resolved"] = tmp["ClosedAt"].notna()
@@ -37,6 +60,7 @@ def build_aging_buckets_csv(df: pd.DataFrame) -> bytes:
     buf = io.StringIO()
     aging.to_csv(buf, index=False)
     return buf.getvalue().encode("utf-8")
+
 
 # ---------- Page Setup ----------
 st.set_page_config(page_title='Claims Automation & Insights', layout='wide')
@@ -69,38 +93,24 @@ c1.metric('Avg Processing (hrs)', f"{avg_processing:.2f}" if pd.notna(avg_proces
 c2.metric('SLA Compliance (%)', f"{sla_compliance:.2f}" if pd.notna(sla_compliance) else '—')
 c3.metric('Open Claims', open_claims)
 
-# ---------- Helper to build CSV for download ----------
-def build_kpi_summary_csv(df_current: pd.DataFrame) -> bytes:
-    """Return a CSV (bytes) with the KPIs currently shown in the app."""
-    now_ = pd.Timestamp.utcnow()
-    tmp = df_current.copy()
-    tmp["Resolved"] = tmp["ClosedAt"].notna()
-    tmp["DurationHours"] = ((tmp["ClosedAt"].fillna(now_) - tmp["CreatedAt"]).dt.total_seconds() / 3600).round(2)
-
-    avg_proc = tmp.loc[tmp["Resolved"], "DurationHours"].mean()
-    sla_pct = 100 * (
-        (tmp.loc[tmp["Resolved"], "DurationHours"] <= tmp.loc[tmp["Resolved"], "SLA_Hours"]).mean()
+# ---------- Download buttons (side-by-side under KPI metrics) ----------
+b1, b2 = st.columns(2)
+with b1:
+    st.download_button(
+        label="⬇️ Download KPIs (CSV)",
+        data=build_kpi_summary_csv(df),
+        file_name="kpi_summary.csv",
+        mime="text/csv",
+        help="Exports AvgProcessingHours, SLACompliancePct, and OpenClaims as a CSV."
     )
-    open_cnt = int((~tmp["Resolved"]).sum())
-
-    summary = pd.DataFrame([{
-        "AvgProcessingHours": round(float(avg_proc), 2) if pd.notna(avg_proc) else None,
-        "SLACompliancePct": round(float(sla_pct), 2) if pd.notna(sla_pct) else None,
-        "OpenClaims": open_cnt
-    }])
-
-    buf = io.StringIO()
-    summary.to_csv(buf, index=False)
-    return buf.getvalue().encode("utf-8")
-
-# ---------- Download button (right under KPI metrics) ----------
-st.download_button(
-    label="⬇️ Download KPIs (CSV)",
-    data=build_kpi_summary_csv(df),
-    file_name="kpi_summary.csv",
-    mime="text/csv",
-    help="Exports AvgProcessingHours, SLACompliancePct, and OpenClaims as a CSV."
-)
+with b2:
+    st.download_button(
+        label="⬇️ Download Aging Buckets (CSV)",
+        data=build_aging_buckets_csv(df),
+        file_name="aging_buckets.csv",
+        mime="text/csv",
+        help="Exports the Open-Claims distribution by 0-24h, 24-48h, and >48h."
+    )
 
 # ---------- Chart: Aging Buckets ----------
 st.subheader('Aging Buckets (Open Claims)')
@@ -116,23 +126,3 @@ st.bar_chart(open_df['AgingBucket'].value_counts().sort_index())
 # ---------- Table ----------
 st.subheader('Raw Data Preview')
 st.dataframe(df.head(50))
-# --- After KPI metrics ---
-b1, b2 = st.columns(2)
-
-with b1:
-    st.download_button(
-        label="⬇️ Download KPIs (CSV)",
-        data=build_kpi_summary_csv(df),   # existing helper you already added
-        file_name="kpi_summary.csv",
-        mime="text/csv",
-        help="Exports AvgProcessingHours, SLACompliancePct, and OpenClaims."
-    )
-
-with b2:
-    st.download_button(
-        label="⬇️ Download Aging Buckets (CSV)",
-        data=build_aging_buckets_csv(df),  # <-- the new helper above
-        file_name="aging_buckets.csv",
-        mime="text/csv",
-        help="Exports the Open‑Claims distribution by 0‑24h, 24‑48h, and >48h."
-    )
