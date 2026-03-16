@@ -38,6 +38,11 @@ def build_kpi_summary_csv(df: pd.DataFrame) -> bytes:
     summary.to_csv(buf, index=False)
     return buf.getvalue().encode("utf-8")
 
+def build_filtered_csv(df: pd.DataFrame) -> bytes:
+    buf = io.StringIO()
+    df.to_csv(buf, index=False)
+    return buf.getvalue().encode("utf-8")
+
 
 def build_aging_buckets_csv(df: pd.DataFrame) -> bytes:
     """Return a CSV (bytes) with the Open-Claims Aging Buckets distribution."""
@@ -186,89 +191,98 @@ avg_processing = df_f.loc[df_f["Resolved"], "DurationHours"].mean()
 sla_compliance = 100 * ((df_f.loc[df_f["Resolved"], "DurationHours"] <= df_f.loc[df_f["Resolved"], "SLA_Hours"]).mean())
 open_claims    = int((~df_f["Resolved"]).sum())
 
-c1, c2, c3 = st.columns(3)
-c1.metric("Avg Processing (hrs)", f"{avg_processing:.2f}" if pd.notna(avg_processing) else "—")
-c2.metric("SLA Compliance (%)",  f"{sla_compliance:.2f}" if pd.notna(sla_compliance) else "—")
-c3.metric("Open Claims", open_claims)
+# -------------------------
+# TABS: Overview | Trends | Data
+# -------------------------
+tab_overview, tab_trends, tab_data = st.tabs(["Overview", "Trends", "Data"])
 
-# Download buttons respond to current filters (use df_f)
-b1, b2 = st.columns(2)
-with b1:
-    st.download_button(
-        label="⬇️ Download KPIs (CSV)",
-        data=build_kpi_summary_csv(df_f),
-        file_name="kpi_summary.csv",
-        mime="text/csv",
-        help="Exports AvgProcessingHours, SLACompliancePct, and OpenClaims as a CSV."
-    )
-with b2:
-    st.download_button(
-        label="⬇️ Download Aging Buckets (CSV)",
-        data=build_aging_buckets_csv(df_f),
-        file_name="aging_buckets.csv",
-        mime="text/csv",
-        help="Exports the Open-Claims distribution by 0-24h, 24-48h, and >48h."
-    )
+# ---------- OVERVIEW ----------
+with tab_overview:
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Avg Processing (hrs)", f"{avg_processing:.2f}" if pd.notna(avg_processing) else "—")
+    c2.metric("SLA Compliance (%)",  f"{sla_compliance:.2f}" if pd.notna(sla_compliance) else "—")
+    c3.metric("Open Claims", open_claims)
 
-# =========================
-# Aging Buckets (filtered)
-# =========================
-st.subheader("Aging Buckets (Open Claims)")
-open_df = df_f[~df_f["Resolved"]].copy()
-if open_df.empty:
-    st.info("No open claims in the current filter selection.")
-else:
-    open_df["AgingBucket"] = pd.cut(
-        open_df["DurationHours"],
-        bins=[0, 24, 48, 1e9],
-        labels=["0-24h", "24-48h", ">48h"],
-        include_lowest=True
-    )
-    st.bar_chart(open_df["AgingBucket"].value_counts().sort_index())
-
-# =========================
-# Aging Trends (filtered)
-# =========================
-st.subheader("Aging Trends (Daily Open Claims by Bucket)")
-aging_ts = build_aging_trends(df_f)
-if aging_ts.empty:
-    st.info("No data available to build aging trends for the current selection.")
-else:
-    try:
-        import altair as alt
-        line = (
-            alt.Chart(aging_ts)
-            .mark_line(point=True)
-            .encode(
-                x=alt.X("Date:T", title="Date"),
-                y=alt.Y("Count:Q", title="Open Claims"),
-                color=alt.Color("Bucket:N", title="Aging Bucket"),
-                tooltip=["Date:T", "Bucket:N", "Count:Q"]
-            )
-            .properties(height=320)
-            .interactive()
+    b1, b2 = st.columns(2)
+    with b1:
+        st.download_button(
+            label="⬇️ Download KPIs (CSV)",
+            data=build_kpi_summary_csv(df_f),
+            file_name="kpi_summary.csv",
+            mime="text/csv",
+            help="Exports AvgProcessingHours, SLACompliancePct, and OpenClaims as a CSV."
         )
-        st.altair_chart(line, use_container_width=True)
-    except Exception:
-        piv = aging_ts.pivot(index="Date", columns="Bucket", values="Count").fillna(0)
-        st.line_chart(piv)
+    with b2:
+        st.download_button(
+            label="⬇️ Download Aging Buckets (CSV)",
+            data=build_aging_buckets_csv(df_f),
+            file_name="aging_buckets.csv",
+            mime="text/csv",
+            help="Exports the Open-Claims distribution by 0-24h, 24-48h, and >48h."
+        )
 
-    # Download Aging Trends CSV
-    buf = io.StringIO()
-    aging_ts.to_csv(buf, index=False)
+# ---------- TRENDS ----------
+with tab_trends:
+    st.subheader("Aging Buckets (Open Claims)")
+    open_df = df_f[~df_f["Resolved"]].copy()
+    if open_df.empty:
+        st.info("No open claims in the current filter selection.")
+    else:
+        open_df["AgingBucket"] = pd.cut(
+            open_df["DurationHours"],
+            bins=[0, 24, 48, 1e9],
+            labels=["0-24h", "24-48h", ">48h"],
+            include_lowest=True
+        )
+        st.bar_chart(open_df["AgingBucket"].value_counts().sort_index())
+
+    st.subheader("Aging Trends (Daily Open Claims by Bucket)")
+    aging_ts = build_aging_trends(df_f)
+    if aging_ts.empty:
+        st.info("No data available to build aging trends for the current selection.")
+    else:
+        try:
+            import altair as alt
+            line = (
+                alt.Chart(aging_ts)
+                .mark_line(point=True)
+                .encode(
+                    x=alt.X("Date:T", title="Date"),
+                    y=alt.Y("Count:Q", title="Open Claims"),
+                    color=alt.Color("Bucket:N", title="Aging Bucket"),
+                    tooltip=["Date:T", "Bucket:N", "Count:Q"]
+                )
+                .properties(height=320)
+                .interactive()
+            )
+            st.altair_chart(line, use_container_width=True)
+        except Exception:
+            piv = aging_ts.pivot(index="Date", columns="Bucket", values="Count").fillna(0)
+            st.line_chart(piv)
+
+        # Download Aging Trends CSV
+        buf = io.StringIO()
+        aging_ts.to_csv(buf, index=False)
+        st.download_button(
+            "⬇️ Download Aging Trends (CSV)",
+            data=buf.getvalue().encode("utf-8"),
+            file_name="aging_trends_daily.csv",
+            mime="text/csv",
+            help="Daily counts of open claims by aging bucket for the current filters."
+        )
+
+# ---------- DATA ----------
+with tab_data:
+    st.subheader("Raw Data Preview (Filtered)")
+    if df_f.empty:
+        st.info("No rows match the current filters.")
+    else:
+        st.dataframe(df_f.head(50), use_container_width=True)
+
     st.download_button(
-        "⬇️ Download Aging Trends (CSV)",
-        data=buf.getvalue().encode("utf-8"),
-        file_name="aging_trends_daily.csv",
+        "⬇️ Download Filtered Data (CSV)",
+        data=build_filtered_csv(df_f),
+        file_name="claims_filtered.csv",
         mime="text/csv",
-        help="Daily counts of open claims by aging bucket for the current filters."
+        help="Exports the current filtered dataset."
     )
-
-# =========================
-# Table (filtered)
-# =========================
-st.subheader("Raw Data Preview (Filtered)")
-if df_f.empty:
-    st.info("No rows match the current filters.")
-else:
-    st.dataframe(df_f.head(50))
