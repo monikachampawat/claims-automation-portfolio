@@ -61,6 +61,61 @@ def build_aging_buckets_csv(df: pd.DataFrame) -> bytes:
     aging.to_csv(buf, index=False)
     return buf.getvalue().encode("utf-8")
 
+def build_aging_trends(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Return a daily time series of counts of OPEN claims by aging bucket.
+    Buckets: 0–24h, 24–48h, >48h.
+    """
+    if df.empty:
+        return pd.DataFrame(columns=["Date", "Bucket", "Count"])
+
+    # Ensure datetime
+    dfx = df.copy()
+    dfx["CreatedAt"] = pd.to_datetime(dfx["CreatedAt"], utc=True, errors="coerce")
+    dfx["ClosedAt"]  = pd.to_datetime(dfx["ClosedAt"],  utc=True, errors="coerce")
+
+    # Build a continuous calendar from first create to "today" (UTC)
+    start = dfx["CreatedAt"].min()
+    end   = pd.Timestamp.utcnow().normalize()
+    if pd.isna(start):
+        return pd.DataFrame(columns=["Date", "Bucket", "Count"])
+
+    days = pd.date_range(start=start.normalize(), end=end, freq="D", tz="UTC")
+
+    # For each day, compute age (in hours) for OPEN claims (not yet closed by that day)
+    out = []
+    for day in days:
+        # All claims created up to 'day' and not closed before 'day'
+        open_mask = (dfx["CreatedAt"] <= day + pd.Timedelta(days=1)) & (
+            (dfx["ClosedAt"].isna()) | (dfx["ClosedAt"] > day + pd.Timedelta(days=1))
+        )
+        open_claims = dfx.loc[open_mask].copy()
+        if open_claims.empty:
+            for b in ["0-24h", "24-48h", ">48h"]:
+                out.append({"Date": day.date(), "Bucket": b, "Count": 0})
+            continue
+
+        # Age as of the end of 'day'
+        asof = day + pd.Timedelta(days=1)
+        open_claims["AgeHours"] = ((asof - open_claims["CreatedAt"])
+                                   .dt.total_seconds() / 3600.0)
+
+        open_claims["Bucket"] = pd.cut(
+            open_claims["AgeHours"],
+            bins=[0, 24, 48, np.inf],
+            labels=["0-24h", "24-48h", ">48h"],
+            include_lowest=True,
+            right=True
+        )
+
+        counts = open_claims["Bucket"].value_counts().reindex(["0-24h","24-48h",">48h"], fill_value=0)
+        for b, c in counts.items():
+            out.append({"Date": day.date(), "Bucket": b, "Count": int(c)})
+
+    ts = pd.DataFrame(out)
+    ts["Date"] = pd.to_datetime(ts["Date"])
+    return ts.sort_values(["Date", "Bucket"]).reset_index(drop=True)
+
 
 # ---------- Page Setup ----------
 st.set_page_config(page_title='Claims Automation & Insights', layout='wide')
