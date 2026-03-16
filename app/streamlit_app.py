@@ -178,6 +178,48 @@ open_df['AgingBucket'] = pd.cut(
 )
 st.bar_chart(open_df['AgingBucket'].value_counts().sort_index())
 
+# ---------- Aging Trends (Time Series) ----------
+st.subheader("Aging Trends (Daily Open Claims by Bucket)")
+
+aging_ts = build_aging_trends(df)
+
+if aging_ts.empty:
+    st.info("No data available to build aging trends.")
+else:
+    # Use Altair if present; otherwise fall back to Streamlit line chart
+    try:
+        import altair as alt
+        line = (
+            alt.Chart(aging_ts)
+            .mark_line(point=True)
+            .encode(
+                x=alt.X("Date:T", title="Date"),
+                y=alt.Y("Count:Q", title="Open Claims"),
+                color=alt.Color("Bucket:N", title="Aging Bucket"),
+                tooltip=["Date:T", "Bucket:N", "Count:Q"]
+            )
+            .properties(height=320)
+            .interactive()
+        )
+        st.altair_chart(line, use_container_width=True)
+    except Exception:
+        # Pivot for Streamlit's wide-format line_chart
+        piv = aging_ts.pivot(index="Date", columns="Bucket", values="Count").fillna(0)
+        st.line_chart(piv)
+
+    # (Optional) Download the trend data as CSV
+    import io
+    buf = io.StringIO()
+    aging_ts.to_csv(buf, index=False)
+    st.download_button(
+        "⬇️ Download Aging Trends (CSV)",
+        data=buf.getvalue().encode("utf-8"),
+        file_name="aging_trends_daily.csv",
+        mime="text/csv",
+        help="Daily counts of open claims by aging bucket."
+    )
+
+
 # ---------- Table ----------
 st.subheader('Raw Data Preview')
 st.dataframe(df.head(50))
